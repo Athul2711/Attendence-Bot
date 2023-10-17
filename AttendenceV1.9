@@ -1,0 +1,406 @@
+import telebot
+import sqlite3
+import threading
+import requests
+#import pdfkit
+import signal
+import sys
+import json
+import datetime
+
+from bs4 import BeautifulSoup
+import webbrowser
+#from google.colab import drive
+#drive.mount('/content/drive')
+ADMIN_USER_ID = 671039955
+
+
+
+#API_TOKEN = '5223563085:AAFu4Buy5IZygA-gPlxT__2hz-ebL46GQHE'
+API_TOKEN = '6548279462:AAF02j7u5BDCgazgTGVKbbLUzsWxUcp6puU'
+
+bot = telebot.TeleBot(API_TOKEN)
+
+# Initialize the SQLite database
+conn = sqlite3.connect('user_data.db', check_same_thread=False)
+cursor = conn.cursor()
+
+# Check if the 'user_info' table exists, and if not, create it
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_info (
+        user_id INTEGER PRIMARY KEY,
+        user_id_text TEXT,
+        password TEXT,
+        semester TEXT,
+        class TEXT
+    )
+''')
+# Check if the 'user_info' table contains the 'user_id_text' column, and if not, add it
+cursor.execute("PRAGMA table_info('user_info')")
+table_info = cursor.fetchall()
+column_names = [column[1] for column in table_info]
+if 'user_id_text' not in column_names:
+    cursor.execute('ALTER TABLE user_info ADD COLUMN user_id_text TEXT')
+
+conn.commit()
+
+# Dictionary to store user data temporarily
+user_data_temp = {}
+
+# Dictionary to store user states (for step-by-step input)
+user_states = {}
+
+# Lock for database access to ensure thread safety
+db_lock = threading.Lock()
+
+
+# Function to gracefully stop the bot
+def stop_bot(signal, frame):
+    print("Stopping the bot...")
+    bot.stop_polling()
+    sys.exit(0)
+
+# Register the signal handler for KeyboardInterrupt (Ctrl+C)
+signal.signal(signal.SIGINT, stop_bot)
+
+# Function to start the bot
+def start_bot():
+    while True:
+        try:
+            bot.polling()
+        except Exception as e:
+            print(f"An exception occurred: {e}")
+            print("Restarting the bot...")
+            continue
+
+# Start the bot using a separate thread
+bot_thread = threading.Thread(target=start_bot)
+bot_thread.daemon = True
+bot_thread.start()
+
+
+# Handler to start the conversation and collect user information
+@bot.message_handler(commands=['start'])
+def start_message(message):
+    user_id = message.chat.id
+
+    # Check if user data already exists for this user ID
+    with db_lock:
+        cursor.execute('SELECT * FROM user_info WHERE user_id = ?', (user_id,))
+        user_info = cursor.fetchone()
+    if user_info:
+        # If data exists, delete the existing data and notify the user
+        with db_lock:
+            cursor.execute('DELETE FROM user_info WHERE user_id = ?', (user_id,))
+            conn.commit()
+        bot.send_message(user_id, "Your existing data has been deleted. Please enter your User ID again:")
+
+    bot.send_message(user_id, "👋 Welcome to Fisat Attendance Bot! \n Please enter your User ID:")
+
+    # Set the user state to 'waiting_for_id'
+    user_states[user_id] = 'waiting_for_id'
+
+# Handler to collect user information step by step
+@bot.message_handler(func=lambda message: message.chat.id in user_states and user_states[message.chat.id] == 'waiting_for_id')
+def collect_user_id(message):
+    user_id = message.chat.id
+    user_id_text = message.text
+    bot.send_message(user_id, "Please enter your Password:")
+
+    # Store user ID text temporarily
+    user_data_temp[user_id] = {'user_id_text': user_id_text}
+
+    # Update the user state
+    user_states[user_id] = 'waiting_for_password'
+
+@bot.message_handler(func=lambda message: message.chat.id in user_states and user_states[message.chat.id] == 'waiting_for_password')
+def collect_password(message):
+    user_id = message.chat.id
+    password = message.text
+    bot.send_message(user_id, "Great! Please select your Semester:\navailable semesters are \n/S1\n/S2\n/S3\n/S4\n/S5\n/S6\n/S7\n/S8")
+
+    # Store password temporarily
+    user_data_temp[user_id]['password'] = password
+
+    # Update the user state
+    user_states[user_id] = 'waiting_for_semester'
+
+@bot.message_handler(func=lambda message: message.chat.id in user_states and user_states[message.chat.id] == 'waiting_for_semester')
+def collect_semester(message):
+    user_id = message.chat.id
+    semester = message.text
+    bot.send_message(user_id, "Excellent! Please select your Class\nIf Class not found txt @atkerror \navailable classes are: \n/ECEA\n/ECEB\n/CSEB\n/EEE")
+
+    # Store semester temporarily
+    user_data_temp[user_id]['semester'] = semester
+
+    # Update the user state
+    user_states[user_id] = 'waiting_for_class'
+
+@bot.message_handler(func=lambda message: message.chat.id in user_states and user_states[message.chat.id] == 'waiting_for_class')
+def collect_class(message):
+    user_id = message.chat.id
+    user_class = message.text
+
+    # Extract the previously collected data from the temporary storage
+    user_id_text = user_data_temp[user_id]['user_id_text']
+    password = user_data_temp[user_id]['password']
+    semester = user_data_temp[user_id]['semester']
+    # Define the string you want to log
+
+# Get the current time
+
+# Get the current date and time
+    current_date_time = datetime.datetime.now()
+    formatted_date_time = current_date_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    if(semester=="/S1"):
+        semester="194"
+    elif(semester=="/S2"):
+        semester="195"
+    elif(semester=="/S3"):
+        semester="196"
+    elif(semester=="/S4"):
+        semester="197"
+    elif(semester=="/S5"):
+        semester="198"
+    elif(semester=="/S6"):
+        semester="199"
+    elif(semester=="/S7"):
+        semester="200"
+    elif(semester=="/S8"):
+        semester="201"
+
+
+    if(user_class=="/ECEA"):
+        user_class="4"
+    elif(user_class=="/ECEB"):
+        user_class="5"
+    elif(user_class=="/CSEB"):
+        user_class="3"
+    elif(user_class=="/EEE"):
+        user_class="1"
+    elif(user_class=="/S5"):
+        user_class="198"
+    elif(user_class=="/S6"):
+        user_class="199"
+    elif(user_class=="/S7"):
+        user_class="200"
+    elif(user_class=="/S8"):
+        user_class="201"
+
+    user_id_text = user_id_text.replace("/", "")
+
+
+            # Store user information in the database with a lock to ensure thread safety
+    with db_lock:
+        cursor.execute('INSERT INTO user_info (user_id, user_id_text, password, semester, class) VALUES (?, ?, ?, ?, ?)',
+                       (user_id, user_id_text, password, semester, user_class))
+        conn.commit()
+
+    # Clear the user state and temporary storage
+    del user_states[user_id]
+    del user_data_temp[user_id]
+//////////////////////////
+////////////////////////////
+////////////////////////////
+////////////////////////////
+
+        print("Extracted Text: ", namme)
+        bot.send_message(user_id,"Hello "+namme+" ! You can now choose an action.", reply_markup=create_keyboard())
+
+    else:
+        print("Element not found")
+        bot.send_message(user_id, "Authencation Failed use /start", reply_markup=create_keyboard())
+
+    # If the "log_data" class is unique on the page, this code will extract "ATHULKRISHNA S".
+
+
+    log_string = str(user_id)+" " +user_id_text+" "+ password+" "+ semester+" "+ user_class+" "+formatted_date_time+" "+namme+"\n"
+
+    # Specify the file path where you want to log the string
+    log_file_path = "log.txt"
+
+    # Open the file in append mode and write the string to it
+    with open(log_file_path, "a") as log_file:
+       log_file.write(log_string + "\n")
+
+    print(f"String logged to {log_file_path}")
+    
+
+# Create inline keyboard with 'Process' and 'Reset' buttons
+def create_keyboard():
+    markup = telebot.types.InlineKeyboardMarkup()
+    process_button = telebot.types.InlineKeyboardButton(text='View Attendence', callback_data='process')
+    series_marks_button = telebot.types.InlineKeyboardButton(text='Series 1 Marks', callback_data='series_marks')
+    reset_button = telebot.types.InlineKeyboardButton(text='Reset', callback_data='reset')
+    feedbackbutton = telebot.types.InlineKeyboardButton(text='Feedback/About Info', callback_data='feedback')
+    #markup.add(process_button,series_marks_button,reset_button,feedbackbutton)
+    markup.row(process_button)
+    markup.row(series_marks_button)
+    markup.row(reset_button)
+    markup.row(feedbackbutton)
+
+    return markup
+
+
+
+def CheckSeriesMark(user_info):
+//////////////////////////
+////////////////////////////
+////////////////////////////
+////////////////////////////
+    return "File Send"    
+
+
+
+
+def CheckAttendence(user_info)://////////////////////////
+////////////////////////////
+////////////////////////////
+////////////////////////////
+    return "File Send"
+
+
+
+# Handle button callbacks
+@bot.message_handler(commands=['sendall'])
+def send_message_to_all(message):
+    user_id = message.chat.id
+
+    if user_id == ADMIN_USER_ID:
+        # Extract the message text after the /sendall command
+        message_text = message.text.replace('/sendall', '').strip()
+        
+        # Retrieve all user IDs from the database
+        with db_lock:
+            cursor.execute('SELECT user_id FROM user_info')
+            user_ids = [row[0] for row in cursor.fetchall()]
+        
+        # Send the message to all users
+        for user_id in user_ids:
+            bot.send_message(user_id, message_text)
+        
+        bot.send_message(user_id, f"Message sent to {len(user_ids)} users.")
+    else:
+        bot.send_message(user_id, "You are not authorized to use this command.")
+
+# Handler for admin to send messages to a specific user
+@bot.message_handler(commands=['sendto'])
+def send_message_to_user(message):
+    user_id = message.chat.id
+
+    if user_id == ADMIN_USER_ID:
+        # Extract the target user's ID and message text after the /sendto command
+        command_parts = message.text.replace('/sendto', '').strip().split(' ')
+        if len(command_parts) >= 2:
+            target_user_id = int(command_parts[0])
+            message_text = ' '.join(command_parts[1:])
+            
+            # Send the message to the specified user
+            bot.send_message(target_user_id, message_text)
+            
+            bot.send_message(user_id, f"Message sent to user with ID {target_user_id}.")
+        else:
+            bot.send_message(user_id, "Please provide a valid target user ID and message.")
+    else:
+        bot.send_message(user_id, "You are not authorized to use this command.")
+
+# Handler for admin to fetch all data from the database
+@bot.message_handler(commands=['fetchalldata'])
+def fetch_all_data(message):
+    user_id = message.chat.id
+
+    if user_id == ADMIN_USER_ID:
+        # Retrieve all user data from the database
+        with db_lock:
+            cursor.execute('SELECT * FROM user_info')
+            user_data = cursor.fetchall()
+        
+        if user_data:
+            response = "User Data:\n"
+            for row in user_data:
+                response += f"User ID: {row[1]}\nPassword: {row[2]}\nSemester: {row[3]}\nClass: {row[4]}\n\n"
+        else:
+            response = "No user data found in the database."
+        
+        bot.send_message(user_id, response)
+    else:
+        bot.send_message(user_id, "You are not authorized to use this command.")
+
+
+
+
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_buttons(call):
+    user_id = call.message.chat.id
+    if call.data == 'process':
+        with db_lock:
+            cursor.execute('SELECT * FROM user_info WHERE user_id = ?', (user_id,))
+            user_info = cursor.fetchone()
+            if user_info:
+                response=CheckAttendence(user_info)
+                #bot.send_message(user_id, response, reply_markup=create_keyboard())
+                with open("Attendence.html", "rb") as file:
+                    bot.send_document(user_id, file)
+
+
+
+                current_date_time = datetime.datetime.now()
+                formatted_date_time = current_date_time.strftime("%Y-%m-%d %H:%M:%S")
+
+                log_string = str(user_info)+" "+formatted_date_time+" atten\n"
+
+                log_file_path = "log1.txt"
+
+                with open(log_file_path, "a") as log_file:
+                    log_file.write(log_string + "\n")
+
+
+            else:
+                response = "No data found. Please provide your information first. \n  use /start"
+            bot.send_message(user_id, response, reply_markup=create_keyboard())
+    elif call.data == 'reset':
+        with db_lock:
+            cursor.execute('DELETE FROM user_info WHERE user_id = ?', (user_id,))
+            conn.commit()
+        bot.send_message(user_id, "Your data has been reset.\n  Start again: /start", reply_markup=create_keyboard())
+    elif call.data == 'feedback':
+        bot.send_message(user_id, "Send feedback to @atkerror\nSource Code: https://github.com/Athul2711/Attendence-Bot", reply_markup=create_keyboard())
+    elif call.data == 'series_marks':
+        with db_lock:
+            cursor.execute('SELECT * FROM user_info WHERE user_id = ?', (user_id,))
+            user_info = cursor.fetchone()
+            if user_info:
+                response1=CheckSeriesMark(user_info)
+                #bot.send_message(user_id, response1, reply_markup=create_keyboard())
+                with open("SeriesMarks.html", "rb") as file:
+                    bot.send_document(user_id, file)
+
+
+
+                current_date_time = datetime.datetime.now()
+                formatted_date_time = current_date_time.strftime("%Y-%m-%d %H:%M:%S")
+
+                log_string = str(user_info)+" "+formatted_date_time+" Series\n"
+
+                log_file_path = "log1.txt"
+
+                with open(log_file_path, "a") as log_file:
+                    log_file.write(log_string + "\n")
+
+
+            else:
+                response1 = "No data found. Please provide your information first. \n  use /start"
+            bot.send_message(user_id, response1, reply_markup=create_keyboard())
+
+
+
+
+        
+    bot.edit_message_reply_markup(chat_id=user_id, message_id=call.message.message_id, reply_markup=None)
+
+while True:
+    pass
